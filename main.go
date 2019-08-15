@@ -2,6 +2,7 @@ package main
 
 import (
     "bing/api"
+    "bing/export"
     "fmt"
     "os"
 )
@@ -15,5 +16,5 @@ func main() {
     params := api.CreateQuery("dog", 1)
     client := api.BingClient{SecretKey:bingKey}
     images := client.RequestImages(params)
-    fmt.Print(images)
+    export.ToCSV(images, "output.csv")
 }

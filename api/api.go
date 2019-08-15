@@ -27,13 +27,14 @@ type ImageResult struct {
 	Width int			  `json:"width"`
 	ImageID string		  `json:"imageId"`
 	Name string			  `json:"name"`
-	WebSearchUrl string   `json:"webSearchUrl"`
+	WebSearchURL string   `json:"webSearchUrl"`
+	ContentURL string     `json:"contentUrl"`
 }
 
 type ImagesCollection struct {
-	ID string 				 `json:"id"`
-	NextOffset int  		 `json:"nextOffset"`
-	Collection []ImageResult `json:"value"`
+	NextOffset int  	 `json:"nextOffset"`
+	Values []ImageResult `json:"value"`
+	Query string
 }
 
 var DefaultSearchParams = SearchParams{
@@ -69,6 +70,7 @@ func (c *BingClient) RequestImages(params SearchParams) *ImagesCollection {
 	decoder := json.NewDecoder(response.Body)
 	err = decoder.Decode(&result)
 	if err != nil { panic(err) }
+	result.Query = params.Query
 	return &result
 }
 
