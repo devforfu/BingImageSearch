@@ -21,13 +21,25 @@ func main() {
     }
 
     client := api.BingClient{SecretKey:bingKey}
-    if *conf.DownloadAll {
 
+    for _, query := range conf.QueryList {
+        if query == "" { continue }
+        log.Printf("Running query: '%s'", query)
+        currOffset := *conf.Offset
+        running := true
+        for running {
+            log.Printf(".. requesting with offset: %d", currOffset)
+            params := api.CreateQuery(query, currOffset)
+            images := client.RequestImages(params)
+            if *conf.DownloadAll {
+                running = images.NextOffset != currOffset
+                currOffset = images.NextOffset
+            } else {
+                running = false
+            }
+            export.ToCSV(images, "output.csv")
+        }
     }
-    params := api.CreateQuery(*conf.Query, *conf.Offset)
-
-    images := client.RequestImages(params)
-    export.ToCSV(images, "output.csv")
 }
 
 type RunConfig struct {

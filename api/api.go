@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 )
 
 const baseURL = "https://api.cognitive.microsoft.com/bing/v7.0/images/search"
@@ -77,15 +78,19 @@ func (c *BingClient) RequestImages(params SearchParams) *ImagesCollection {
 func (c *BingClient) MakeRequest(method string, params SearchParams) *http.Request {
 	request, err := http.NewRequest(method, baseURL, nil)
 	if err != nil { panic(err) }
+	request.URL.RawQuery = c.PrepareRawQuery(params)
+	return request
+}
+
+func (c *BingClient) PrepareRawQuery(params SearchParams) string {
 	data, err := json.Marshal(params)
 	if err != nil { panic(err) }
 	var jsonObject map[string]string
 	_ = json.Unmarshal(data, &jsonObject)
-	q := request.URL.Query()
+	values := make(url.Values)
 	for k, v := range jsonObject {
 		if v == "" { continue }
-		q.Add(k, v)
+		values.Add(k, v)
 	}
-	request.URL.RawQuery = q.Encode()
-	return request
+	return values.Encode()
 }
