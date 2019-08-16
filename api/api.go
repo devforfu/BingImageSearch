@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 )
@@ -78,19 +80,21 @@ func (c *BingClient) RequestImages(params SearchParams) *ImagesCollection {
 func (c *BingClient) MakeRequest(method string, params SearchParams) *http.Request {
 	request, err := http.NewRequest(method, baseURL, nil)
 	if err != nil { panic(err) }
-	request.URL.RawQuery = c.PrepareRawQuery(params)
+	query := c.PrepareRawQuery(params)
+	log.Printf("prepared query parameters: %s", query)
+	request.URL.RawQuery = query
 	return request
 }
 
 func (c *BingClient) PrepareRawQuery(params SearchParams) string {
 	data, err := json.Marshal(params)
 	if err != nil { panic(err) }
-	var jsonObject map[string]string
+	var jsonObject map[string]interface{}
 	_ = json.Unmarshal(data, &jsonObject)
 	values := make(url.Values)
 	for k, v := range jsonObject {
 		if v == "" { continue }
-		values.Add(k, v)
+		values.Add(k, fmt.Sprintf("%v", v))
 	}
 	return values.Encode()
 }

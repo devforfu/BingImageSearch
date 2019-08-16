@@ -24,11 +24,10 @@ func main() {
 
     for _, query := range conf.QueryList {
         if query == "" { continue }
-        log.Printf("Running query: '%s'", query)
+        log.Printf("running query string: '%s'", query)
         currOffset := *conf.Offset
         running := true
         for running {
-            log.Printf(".. requesting with offset: %d", currOffset)
             params := api.CreateQuery(query, currOffset)
             images := client.RequestImages(params)
             if *conf.DownloadAll {
