@@ -3,7 +3,6 @@ package main
 import (
     "bing/api"
     "bing/export"
-    "bufio"
     "flag"
     "fmt"
     "io/ioutil"
@@ -17,7 +16,7 @@ func main() {
 
     bingKey := os.Getenv("BING_API_KEY")
     if bingKey == "" {
-        fmt.Printf("Cannot run query without a key")
+        fmt.Println("Cannot run query without a key.")
         os.Exit(1)
     }
 
@@ -49,7 +48,7 @@ func parseArguments() *RunConfig {
 
     if (*conf.Query == "") && (*conf.File == "") {
         log.Fatalln("Cannot run search without -q or -f arguments provided.")
-    } else if (*conf.Query != "") && (*conf.File == "") {
+    } else if (*conf.Query != "") && (*conf.File != "") {
         log.Fatalln("Ambiguous arguments: both -q and -f are specified.")
     }
 
