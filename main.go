@@ -13,31 +13,10 @@ import (
 
 func main() {
     conf := parseArguments()
-
-    bingKey := os.Getenv("BING_API_KEY")
-    if bingKey == "" {
-        fmt.Println("Cannot run query without a key.")
-        os.Exit(1)
-    }
-
-    client := api.BingClient{SecretKey:bingKey}
-
-    for _, query := range conf.QueryList {
-        if query == "" { continue }
-        log.Printf("running query string: '%s'", query)
-        currOffset := *conf.Offset
-        running := true
-        for running {
-            params := api.CreateQuery(query, currOffset)
-            images := client.RequestImages(params)
-            if *conf.DownloadAll {
-                running = images.NextOffset != currOffset
-                currOffset = images.NextOffset
-            } else {
-                running = false
-            }
-            export.ToCSV(images, "output.csv")
-        }
+    client := api.BingClient{SecretKey:getBingKey()}
+    result := client.Pull(conf.QueryList, *conf.Offset, *conf.DownloadAll)
+    for _, batch := range result {
+        export.ToCSV(batch, *conf.OutputPath)
     }
 }
 
@@ -46,6 +25,7 @@ type RunConfig struct {
     Offset *int
     Query *string
     File *string
+    OutputPath *string
     QueryList []string
 }
 
@@ -55,6 +35,7 @@ func parseArguments() *RunConfig {
     conf.File = flag.String("f", "", "a path to the file with search queries, one per line")
     conf.DownloadAll = flag.Bool("a", false, "download all query results, not only the offset page")
     conf.Offset = flag.Int("p", 0, "take results starting with offset")
+    conf.OutputPath = flag.String("o", "output.csv", "path to dump queries")
     flag.Parse()
 
     if (*conf.Query == "") && (*conf.File == "") {
@@ -78,4 +59,13 @@ func parseArguments() *RunConfig {
     }
 
     return &conf
+}
+
+func getBingKey() string {
+    bingKey := os.Getenv("BING_API_KEY")
+    if bingKey == "" {
+        fmt.Println("Cannot run query without a key.")
+        os.Exit(1)
+    }
+    return bingKey
 }

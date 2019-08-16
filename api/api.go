@@ -63,6 +63,27 @@ type BingClient struct {
 	SecretKey string
 }
 
+func (c *BingClient) Pull(queries []string, start int, downloadAll bool) (result []*ImagesCollection) {
+	for _, query := range queries {
+		if query == "" { continue }
+		log.Printf("running query string: '%s'", query)
+		currOffset := start
+		running := true
+		for running {
+			params := CreateQuery(query, currOffset)
+			images := c.RequestImages(params)
+			if downloadAll {
+				running = images.NextOffset != currOffset
+				currOffset = images.NextOffset
+			} else {
+				running = false
+			}
+			result = append(result, images)
+		}
+	}
+	return result
+}
+
 func (c *BingClient) RequestImages(params SearchParams) *ImagesCollection {
 	request := c.MakeRequest("GET", params)
 	request.Header.Add("Ocp-Apim-Subscription-Key", c.SecretKey)
