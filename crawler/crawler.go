@@ -96,6 +96,7 @@ func (c *Crawler) Crawl(queries []string, outputFolder string, exportFunc io.Exp
 func (c *Crawler) Download(metaDataFolder, imagesFolder string, importFunc io.Importer) {
     log.Printf("loading image URLs from folder: %s", imagesFolder)
 
+    utils.Check(os.MkdirAll(imagesFolder, os.ModePerm))
     urls, err := importFunc(metaDataFolder, "contentUrl")
     if err != nil { log.Printf("%s", err) }
 
@@ -104,16 +105,16 @@ func (c *Crawler) Download(metaDataFolder, imagesFolder string, importFunc io.Im
     fetcher := io.DefaultImageFetcher
 
     for _, url := range urls {
-        wg.Add(1)
-        go func() {
-            defer wg.Done()
-            log.Printf("fetching URL: %s", url)
-            outputFile := path.Join(imagesFolder, utils.RandomString(20))
-            err := fetcher.Fetch(url, outputFile)
-            if err != nil {
-                log.Printf("failed to fetch image from URL: %s , error: %s", url, err.Error())
-            }
-        }()
+       wg.Add(1)
+       go func() {
+           defer wg.Done()
+           log.Printf("fetching URL: %s", url)
+           outputFile := path.Join(imagesFolder, utils.RandomString(20))
+           err := fetcher.Fetch(url, outputFile)
+           if err != nil {
+               log.Printf("failed to fetch image from URL: %s , error: %s", url, err.Error())
+           }
+       }()
     }
 
     log.Printf("waiting for data fetchers...")

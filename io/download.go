@@ -14,7 +14,7 @@ type ImageFetcher struct {
     *http.Client
 }
 
-var DefaultImageFetcher = NewImageFetcher(time.Second)
+var DefaultImageFetcher = NewImageFetcher(10 * time.Second)
 
 func NewImageFetcher(timeout time.Duration) *ImageFetcher {
     return &ImageFetcher{&http.Client{
@@ -33,14 +33,16 @@ func (f *ImageFetcher) Fetch(imageLink, outputFile string) error {
 
     fileURL, err := url.Parse(imageLink)
     if err != nil { return err }
+
     segments := strings.Split(fileURL.Path, "/")
     fileName := segments[len(segments) - 1]
     outputFile += path.Ext(fileName)
     file := utils.MustCreateFile(outputFile)
     defer utils.SilentClose(file)
 
-    _, err = io.Copy(file, response.Body)
-    return err
+    if _, err = io.Copy(file, response.Body); err != nil {
+        return err
+    }
+
+    return file.Sync()
 }
-
-
