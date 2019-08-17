@@ -3,6 +3,7 @@ package io
 import (
     "bing/utils"
     "io"
+    "net"
     "net/http"
     "net/url"
     "path"
@@ -14,14 +15,17 @@ type ImageFetcher struct {
     *http.Client
 }
 
-var DefaultImageFetcher = NewImageFetcher(10 * time.Second)
-
 func NewImageFetcher(timeout time.Duration) *ImageFetcher {
+    var netTransport = &http.Transport{
+        Dial: (&net.Dialer{Timeout: timeout}).Dial,
+        TLSHandshakeTimeout: timeout,
+    }
     return &ImageFetcher{&http.Client{
         CheckRedirect: func(r *http.Request, via []*http.Request) error {
-            r.URL.Opaque = r.URL.Path
-            return nil
+           r.URL.Opaque = r.URL.Path
+           return nil
         },
+        Transport: netTransport,
         Timeout: timeout,
     }}
 }

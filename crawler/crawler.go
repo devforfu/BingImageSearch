@@ -4,15 +4,19 @@ import (
     "bing/api"
     "bing/io"
     "bing/utils"
+    "encoding/json"
     "fmt"
+    "io/ioutil"
     "log"
     "os"
     "path"
     "sync"
+    "time"
 )
 
 type Crawler struct {
     Client *api.BingClient
+    NumWorkers int
 }
 
 func (c *Crawler) Crawl(queries []string, outputFolder string, exportFunc io.Exporter) {
@@ -25,7 +29,8 @@ func (c *Crawler) Crawl(queries []string, outputFolder string, exportFunc io.Exp
     queue := make(chan result, 10)
 
     var workGroup sync.WaitGroup
-    log.Printf("start running queries")
+    log.Printf("launch workers")
+
 
     for i, query := range queries {
         log.Printf("submitting query %d of %d", i+1, len(queries))
@@ -102,21 +107,29 @@ func (c *Crawler) Download(metaDataFolder, imagesFolder string, importFunc io.Im
 
     log.Printf("launching workers...")
     var wg sync.WaitGroup
-    fetcher := io.DefaultImageFetcher
+    fetcher := io.NewImageFetcher(1*time.Hour)
 
+    collected := make(map[string]string)
     for _, url := range urls {
-       wg.Add(1)
-       go func() {
-           defer wg.Done()
-           log.Printf("fetching URL: %s", url)
-           outputFile := path.Join(imagesFolder, utils.RandomString(20))
-           err := fetcher.Fetch(url, outputFile)
-           if err != nil {
-               log.Printf("failed to fetch image from URL: %s , error: %s", url, err.Error())
-           }
-       }()
+        log.Printf("fetching URL: %s", url)
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            outputFile := path.Join(imagesFolder, utils.RandomString(20))
+            err := fetcher.Fetch(url, outputFile)
+            if err != nil {
+               log.Printf(err.Error())
+            } else {
+                collected[outputFile] = url
+            }
+        }()
     }
 
     log.Printf("waiting for data fetchers...")
     wg.Wait()
+
+    log.Printf("writing meta data")
+    collectedJson, _ := json.Marshal(collected)
+    metaFile := path.Join(imagesFolder, "collected.json")
+    _ = ioutil.WriteFile(metaFile, collectedJson, os.ModePerm)
 }
