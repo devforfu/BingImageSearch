@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sync"
 )
 
 const DefaultURL = "https://api.cognitive.microsoft.com/bing/v7.0/images/search"
@@ -20,6 +21,18 @@ type SearchParams struct {
 	ImageType string	`json:"imageType,omitempty"`
 	License string		`json:"license,omitempty"`
 	Size string			`json:"size,omitempty"`
+}
+func (p SearchParams) AsQueryParameters() string {
+	data, err := json.Marshal(p)
+	if err != nil { panic(err) }
+	var jsonObject map[string]interface{}
+	_ = json.Unmarshal(data, &jsonObject)
+	values := make(url.Values)
+	for k, v := range jsonObject {
+		if v == "" { continue }
+		values.Add(k, fmt.Sprintf("%v", v))
+	}
+	return values.Encode()
 }
 
 type ImageResult struct {
@@ -71,11 +84,13 @@ func NewBingClient(endpoint, key string) *BingClient {
 func (c *BingClient) Pull(queries []string, start int, downloadAll bool) (result []*ImagesCollection) {
 	for _, query := range queries {
 		if query == "" { continue }
-		log.Printf("running query string: '%s'", query)
+		log.Printf("search string: '%s'", query)
 		currOffset := start
 		running := true
 		for running {
 			params := CreateQuery(query, currOffset)
+			queryString := params.AsQueryParameters()
+			log.Printf("running query with params: %s", queryString)
 			images := c.RequestImages(params)
 			if downloadAll {
 				running = images.NextOffset != currOffset
@@ -87,6 +102,65 @@ func (c *BingClient) Pull(queries []string, start int, downloadAll bool) (result
 		}
 	}
 	return result
+}
+
+func (c *BingClient) PullParallel(queries []string, start int, downloadAll bool) (collections []*ImagesCollection) {
+	type result struct {
+		collection *ImagesCollection
+		err error
+	}
+
+	results := make(chan result)
+	var wg sync.WaitGroup
+	log.Printf("start running queries")
+
+	for i, query := range queries {
+		log.Printf("submitting query %d of %d", i, len(queries))
+
+		if query == "" { continue }
+
+		log.Printf("search string: %s", query)
+
+		wg.Add(1)
+		go func(q string, output chan<- result) {
+			defer wg.Done()
+			currOffset := start
+			running := true
+			var err error
+			for running {
+				params := CreateQuery(q, currOffset)
+				paramsString := params.AsQueryParameters()
+				log.Printf("running query with params: %s", paramsString)
+				images := c.RequestImages(params)
+				if images.Values == nil {
+					err = fmt.Errorf("failed to pull query: %s/%s", c.Endpoint, paramsString)
+					running = false
+				} else if downloadAll {
+					running = images.NextOffset != currOffset
+					currOffset = images.NextOffset
+				} else {
+					running = false
+				}
+				output <- result{images, err}
+			}
+		}(query, results)
+	}
+
+	go func(){
+		wg.Wait()
+	}()
+
+	log.Printf("combining the collected results")
+
+	for result := range results {
+		if result.err != nil {
+			log.Printf(result.err.Error())
+		} else {
+			collections = append(collections, result.collection)
+		}
+	}
+
+	return collections
 }
 
 func (c *BingClient) RequestImages(params SearchParams) *ImagesCollection {
@@ -106,21 +180,7 @@ func (c *BingClient) RequestImages(params SearchParams) *ImagesCollection {
 func (c *BingClient) MakeRequest(method string, params SearchParams) *http.Request {
 	request, err := http.NewRequest(method, c.Endpoint, nil)
 	if err != nil { panic(err) }
-	query := c.PrepareRawQuery(params)
-	log.Printf("prepared query parameters: %s", query)
+	query := params.AsQueryParameters()
 	request.URL.RawQuery = query
 	return request
-}
-
-func (c *BingClient) PrepareRawQuery(params SearchParams) string {
-	data, err := json.Marshal(params)
-	if err != nil { panic(err) }
-	var jsonObject map[string]interface{}
-	_ = json.Unmarshal(data, &jsonObject)
-	values := make(url.Values)
-	for k, v := range jsonObject {
-		if v == "" { continue }
-		values.Add(k, fmt.Sprintf("%v", v))
-	}
-	return values.Encode()
 }
