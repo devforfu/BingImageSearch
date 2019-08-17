@@ -2,13 +2,12 @@ package crawler
 
 import (
     "bing/api"
-    "bing/export"
+    "bing/io"
+    "bing/utils"
     "fmt"
     "log"
-    "math/rand"
     "os"
     "path"
-    "strings"
     "sync"
 )
 
@@ -16,7 +15,7 @@ type Crawler struct {
     Client *api.BingClient
 }
 
-func (c *Crawler) Crawl(queries []string, outputFolder string) {
+func (c *Crawler) Crawl(queries []string, outputFolder string, exportFunc io.Exporter) {
     type result struct {
         collection *api.ImagesCollection
         err error
@@ -64,16 +63,6 @@ func (c *Crawler) Crawl(queries []string, outputFolder string) {
         close(queue)
     }()
 
-    const domain = "abcdef0123456789"
-    var randomString = func(size int) string {
-        var b strings.Builder
-        for i := 0; i < size; i++ {
-            index := rand.Intn(len(domain))
-            b.WriteRune(rune(domain[index]))
-        }
-        return b.String()
-    }
-
     if err := os.MkdirAll(outputFolder, os.ModePerm); err != nil {
         log.Fatalf("failed to create output folder: %s", err.Error())
     }
@@ -81,21 +70,52 @@ func (c *Crawler) Crawl(queries []string, outputFolder string) {
     log.Printf("launch writers...")
 
     var writerGroup sync.WaitGroup
-    writerGroup.Add(1)
+
     for r := range queue {
-        go func(r result){
+        writerGroup.Add(1)
+        go func(r result) {
             defer writerGroup.Done()
-            outputFile := path.Join(outputFolder, randomString(20) + ".csv")
+            outputFile := path.Join(outputFolder, utils.RandomString(20))
             if r.err != nil {
                 log.Printf("%s", r.err.Error())
             } else {
                 query := r.collection.Query
                 log.Printf("exporting query results for '%s' into file %s", query, outputFile)
-                export.ToCSV(r.collection, outputFile)
+                err := exportFunc(r.collection, outputFile)
+                if err != nil {
+                    log.Printf(err.Error())
+                }
             }
         }(r)
     }
 
     log.Println("waiting for writers...")
     writerGroup.Wait()
+}
+
+func (c *Crawler) Download(metaDataFolder, imagesFolder string, importFunc io.Importer) {
+    log.Printf("loading image URLs from folder: %s", imagesFolder)
+
+    urls, err := importFunc(metaDataFolder, "contentUrl")
+    if err != nil { log.Printf("%s", err) }
+
+    log.Printf("launching workers...")
+    var wg sync.WaitGroup
+    fetcher := io.DefaultImageFetcher
+
+    for _, url := range urls {
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            log.Printf("fetching URL: %s", url)
+            outputFile := path.Join(imagesFolder, utils.RandomString(20))
+            err := fetcher.Fetch(url, outputFile)
+            if err != nil {
+                log.Printf("failed to fetch image from URL: %s , error: %s", url, err.Error())
+            }
+        }()
+    }
+
+    log.Printf("waiting for data fetchers...")
+    wg.Wait()
 }
