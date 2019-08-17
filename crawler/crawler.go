@@ -20,116 +20,180 @@ type Crawler struct {
 }
 
 func (c *Crawler) Crawl(queries []string, outputFolder string, exportFunc io.Exporter) {
-    type result struct {
-        collection *api.ImagesCollection
-        err error
-    }
-
     client := c.Client
-    queue := make(chan result, 10)
-
-    var workGroup sync.WaitGroup
-    log.Printf("launch workers")
-
-
-    for i, query := range queries {
-        log.Printf("submitting query %d of %d", i+1, len(queries))
-
-        if query == "" { continue }
-
-        workGroup.Add(1)
-        go func(q string, out chan<- result) {
-            defer workGroup.Done()
-            log.Printf("search string: %s", q)
-            currOffset := 0
-            running := true
-            var err error
-            for running {
-                params := api.CreateQuery(q, currOffset)
-                paramsString := params.AsQueryParameters()
-                log.Printf("running query with params: %s", paramsString)
-                images := client.RequestImages(params)
-                if images.Values == nil {
-                    err = fmt.Errorf("failed to pull query: %s/%s", client.Endpoint, paramsString)
-                    running = false
-                } else {
-                    running = images.NextOffset != currOffset
-                    currOffset = images.NextOffset
-                }
-                queue <- result{images, err}
-            }
-        }(query, queue)
-    }
+    resultsQueue := make(chan result, 10)
+    queriesQueue := make(chan string)
+    utils.Check(os.MkdirAll(outputFolder, os.ModePerm))
 
     go func(){
-        log.Printf("wait for workers to close the processing queue")
-        workGroup.Wait()
-        log.Printf("closing the queue")
-        close(queue)
+        for _, query := range queries {
+            queriesQueue <- query
+        }
+        close(queriesQueue)
     }()
 
-    if err := os.MkdirAll(outputFolder, os.ModePerm); err != nil {
-        log.Fatalf("failed to create output folder: %s", err.Error())
+    var workerGroup sync.WaitGroup
+    for i := 1; i <= c.NumWorkers; i++ {
+        log.Printf("submitting querying worker %d of %d", i, c.NumWorkers)
+        workerGroup.Add(1)
+        go queryWorker(i, queriesQueue, resultsQueue, &workerGroup, client)
     }
 
-    log.Printf("launch writers...")
+    go func() {
+        log.Printf("wait for workers to close the processing queue")
+        workerGroup.Wait()
+        log.Printf("closing the queue")
+        close(resultsQueue)
+    }()
 
     var writerGroup sync.WaitGroup
-
-    for r := range queue {
+    for i := 1; i <= c.NumWorkers; i++ {
+        log.Printf("Submitting writing worker %d of %d", i, c.NumWorkers)
         writerGroup.Add(1)
-        go func(r result) {
-            defer writerGroup.Done()
-            outputFile := path.Join(outputFolder, utils.RandomString(20))
-            if r.err != nil {
-                log.Printf("%s", r.err.Error())
-            } else {
-                query := r.collection.Query
-                log.Printf("exporting query results for '%s' into file %s", query, outputFile)
-                err := exportFunc(r.collection, outputFile)
-                if err != nil {
-                    log.Printf(err.Error())
-                }
-            }
-        }(r)
+        go writingWorker(i, outputFolder, resultsQueue, &writerGroup, exportFunc)
     }
 
-    log.Println("waiting for writers...")
+    log.Printf("waiting for writers...")
     writerGroup.Wait()
+    log.Printf("collected results are saved into folder: %s", outputFolder)
+}
+
+type result struct {
+    collection *api.ImagesCollection
+    err error
+}
+
+func queryWorker(
+    workerIndex int,
+    in <-chan string,
+    out chan<- result,
+    group *sync.WaitGroup,
+    client *api.BingClient) {
+
+    defer group.Done()
+
+    for queryString := range in {
+        if queryString == "" { continue }
+        log.Printf("[worker:%d] sending search string: %s", workerIndex, queryString)
+
+        currOffset := 0
+        running := true
+        var err error
+        for running {
+            params := api.CreateQuery(queryString, currOffset)
+            paramsString := params.AsQueryParameters()
+            log.Printf("[worker:%d] running query with params: %s", workerIndex, paramsString)
+            images := client.RequestImages(params)
+            if images.Values == nil {
+                err = fmt.Errorf("[worker:%d] failed to pull query: %s/%s",
+                    workerIndex, client.Endpoint, paramsString)
+                running = false
+            } else {
+                running = images.NextOffset != currOffset
+                currOffset = images.NextOffset
+            }
+            out <- result{images, err}
+        }
+    }
+
+    log.Printf("[worker:%d] terminated", workerIndex)
+}
+
+func writingWorker(
+    workerIndex int,
+    outputFolder string,
+    in <-chan result,
+    group *sync.WaitGroup,
+    exportFunc io.Exporter) {
+
+    defer group.Done()
+
+    for result := range in {
+        outputFile := path.Join(outputFolder, utils.RandomString(20))
+        log.Printf("[worker:%d] saving file %s", workerIndex, outputFile)
+        if result.err != nil {
+            log.Printf(result.err.Error())
+        } else {
+            query := result.collection.Query
+            log.Printf(
+                "[worker:%d] exporting query results for '%s' into file '%s",
+                workerIndex, query, outputFile)
+            if err := exportFunc(result.collection, outputFile); err != nil {
+                log.Printf(err.Error())
+            }
+        }
+    }
+
+    log.Printf("[worker:%d] terminated", workerIndex)
 }
 
 func (c *Crawler) Download(metaDataFolder, imagesFolder string, importFunc io.Importer) {
-    log.Printf("loading image URLs from folder: %s", imagesFolder)
+    log.Printf("loading image URLs from folder: %s", metaDataFolder)
 
     utils.Check(os.MkdirAll(imagesFolder, os.ModePerm))
     urls, err := importFunc(metaDataFolder, "contentUrl")
     if err != nil { log.Printf("%s", err) }
 
-    log.Printf("launching workers...")
-    var wg sync.WaitGroup
-    fetcher := io.NewImageFetcher(1*time.Hour)
+    feed := make(chan string, c.NumWorkers)
+    go func () {
+        for _, url := range urls {
+            // log.Printf("submitting URL: %s", url)
+            feed <- url
+        }
+        close(feed)
+    }()
 
-    collected := make(map[string]string)
-    for _, url := range urls {
-        log.Printf("fetching URL: %s", url)
-        wg.Add(1)
-        go func() {
-            defer wg.Done()
-            outputFile := path.Join(imagesFolder, utils.RandomString(20))
-            err := fetcher.Fetch(url, outputFile)
-            if err != nil {
-               log.Printf(err.Error())
-            } else {
-                collected[outputFile] = url
-            }
-        }()
+    log.Printf("launching workers...")
+    var workerGroup sync.WaitGroup
+    results := make(chan downloaded)
+    for i := 1; i <= c.NumWorkers; i++ {
+        workerGroup.Add(1)
+        go downloader(i, imagesFolder, feed, results, &workerGroup)
     }
 
-    log.Printf("waiting for data fetchers...")
-    wg.Wait()
+    go func(){
+        workerGroup.Wait()
+        log.Printf("all downloaders were terminated, closing results channel")
+        close(results)
+    }()
 
-    log.Printf("writing meta data")
-    collectedJson, _ := json.Marshal(collected)
+    collected := make(map[string]bool)
+    for result := range results {
+        collected[result.url] = result.success
+    }
+
+    collectedJSON, _ := json.Marshal(collected)
     metaFile := path.Join(imagesFolder, "collected.json")
-    _ = ioutil.WriteFile(metaFile, collectedJson, os.ModePerm)
+    _ = ioutil.WriteFile(metaFile, collectedJSON, os.ModePerm)
+    log.Printf("collected results are saved into folder: %s", imagesFolder)
+}
+
+type downloaded struct {
+    url string
+    success bool
+}
+
+func downloader(
+    workerIndex int,
+    imagesFolder string,
+    urls <-chan string,
+    results chan<- downloaded,
+    group *sync.WaitGroup) {
+
+    defer group.Done()
+
+    fetcher := io.NewImageFetcher(1*time.Hour)
+    for url := range urls {
+        log.Printf("[worker:%d] fetching URL: %s", workerIndex, url)
+        outputFile := path.Join(imagesFolder, utils.RandomString(20))
+        success := true
+        err := fetcher.Fetch(url, outputFile)
+        if err != nil {
+            log.Printf("[worker:%d] %s", workerIndex, err.Error())
+            success = false
+        }
+        results <- downloaded{url, success}
+    }
+
+    log.Printf("[worker:%d] terminated", workerIndex)
 }
