@@ -13,7 +13,7 @@ import (
 
 func main() {
     conf := parseArguments()
-    client := api.BingClient{SecretKey:getBingKey()}
+    client := api.NewBingClient(getBingEndpoint(), getBingKey())
     result := client.Pull(conf.QueryList, *conf.Offset, *conf.DownloadAll)
     for _, batch := range result {
         export.ToCSV(batch, *conf.OutputPath)
@@ -68,4 +68,12 @@ func getBingKey() string {
         os.Exit(1)
     }
     return bingKey
+}
+
+func getBingEndpoint() string {
+    bingEndpoint := os.Getenv("BING_ENDPOINT")
+    if bingEndpoint == "" {
+        bingEndpoint = api.DefaultURL
+    }
+    return bingEndpoint
 }

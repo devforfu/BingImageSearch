@@ -8,7 +8,7 @@ import (
 	"net/url"
 )
 
-const baseURL = "https://api.cognitive.microsoft.com/bing/v7.0/images/search"
+const DefaultURL = "https://api.cognitive.microsoft.com/bing/v7.0/images/search"
 
 type SearchParams struct {
 	Count int 			`json:"count"`
@@ -60,7 +60,12 @@ func CreateQuery(query string, offset int) SearchParams {
 }
 
 type BingClient struct {
+	Endpoint string
 	SecretKey string
+}
+
+func NewBingClient(endpoint, key string) *BingClient {
+	return &BingClient{Endpoint:endpoint, SecretKey:key}
 }
 
 func (c *BingClient) Pull(queries []string, start int, downloadAll bool) (result []*ImagesCollection) {
@@ -99,7 +104,7 @@ func (c *BingClient) RequestImages(params SearchParams) *ImagesCollection {
 }
 
 func (c *BingClient) MakeRequest(method string, params SearchParams) *http.Request {
-	request, err := http.NewRequest(method, baseURL, nil)
+	request, err := http.NewRequest(method, c.Endpoint, nil)
 	if err != nil { panic(err) }
 	query := c.PrepareRawQuery(params)
 	log.Printf("prepared query parameters: %s", query)
