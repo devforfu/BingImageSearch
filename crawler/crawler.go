@@ -109,7 +109,7 @@ func writingWorker(
     defer group.Done()
 
     for result := range in {
-        outputFile := path.Join(outputFolder, utils.RandomString(20))
+        outputFile := path.Join(outputFolder, utils.SimpleRandomString(20))
         log.Printf("[worker:%d] saving file %s", workerIndex, outputFile)
         if result.err != nil {
             log.Printf(result.err.Error())
@@ -185,7 +185,7 @@ func downloader(
     fetcher := io.NewImageFetcher(1*time.Hour)
     for url := range urls {
         log.Printf("[worker:%d] fetching URL: %s", workerIndex, url)
-        outputFile := path.Join(imagesFolder, utils.RandomString(20))
+        outputFile := path.Join(imagesFolder, utils.SimpleRandomString(20))
         success := true
         err := fetcher.Fetch(url, outputFile)
         if err != nil {

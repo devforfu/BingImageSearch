@@ -23,7 +23,7 @@ func MustCreateFile(fileName string) *os.File {
     return file
 }
 
-func RandomString(size int) string {
+func SimpleRandomString(size int) string {
     const domain = "abcdef0123456789"
     var b strings.Builder
     for i := 0; i < size; i++ {
