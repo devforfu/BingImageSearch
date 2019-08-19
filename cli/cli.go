@@ -14,6 +14,7 @@ type RunConfig struct {
     File *string
     OutputFolder *string
     QueryList []string
+    NumWorkers *int
 }
 
 func ParseArguments() *RunConfig {
@@ -23,6 +24,7 @@ func ParseArguments() *RunConfig {
     conf.File = flag.String("f", "",
         "a path to the file with search queries, one per line, or to the folder with URLs")
     conf.OutputFolder = flag.String("o", "output", "path to the folder with dumped queries")
+    conf.NumWorkers = flag.Int("j", 10, "number of workers (jobs)")
     flag.Parse()
 
     if *conf.Mode == "query" {
