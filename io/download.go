@@ -2,12 +2,11 @@ package io
 
 import (
     "bing/utils"
+    "fmt"
     "io"
     "net"
     "net/http"
     "net/url"
-    "path"
-    "strings"
     "time"
 )
 
@@ -36,11 +35,16 @@ func (f *ImageFetcher) Fetch(imageLink, outputFile string) error {
     defer utils.SilentClose(response.Body)
 
     fileURL, err := url.Parse(imageLink)
-    if err != nil { return err }
+    if err != nil {
+        return err
+    }
 
-    segments := strings.Split(fileURL.Path, "/")
-    fileName := segments[len(segments) - 1]
-    outputFile += path.Ext(fileName)
+    ext, err := utils.FilenameFromURL(fileURL)
+    if err != nil {
+        return err
+    }
+
+    outputFile += fmt.Sprintf(".%s", ext)
     file := utils.MustCreateFile(outputFile)
     defer utils.SilentClose(file)
 
