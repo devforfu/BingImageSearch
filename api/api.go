@@ -1,6 +1,7 @@
 package api
 
 import (
+    "bing/utils"
     "encoding/json"
     "fmt"
     "log"
@@ -168,11 +169,13 @@ func (c *BingClient) RequestImages(params SearchParams) *ImagesCollection {
     request.Header.Add("Ocp-Apim-Subscription-Key", c.SecretKey)
     response, err := http.DefaultClient.Do(request)
     if err != nil { panic(err) }
-    defer response.Body.Close()
+
+    defer utils.SilentClose(response.Body)
     result := ImagesCollection{}
     decoder := json.NewDecoder(response.Body)
     err = decoder.Decode(&result)
     if err != nil { panic(err) }
+
     result.Query = params.Query
     return &result
 }

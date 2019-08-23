@@ -83,7 +83,7 @@ func downloadingWorker(
     workerIndex int,
     imagesFolder string,
     urls <-chan string,
-    results chan<- downloaded,
+    results chan<- Downloaded,
     group *sync.WaitGroup) {
 
     defer group.Done()
@@ -92,13 +92,11 @@ func downloadingWorker(
     for url := range urls {
         log.Printf("[worker:%d] fetching URL: %s", workerIndex, url)
         outputFile := path.Join(imagesFolder, utils.SimpleRandomString(20))
-        success := true
-        err := fetcher.Fetch(url, outputFile)
+        createdFile, err := fetcher.Fetch(url, outputFile)
         if err != nil {
             log.Printf("[worker:%d] %s", workerIndex, err.Error())
-            success = false
         }
-        results <- downloaded{url, success}
+        results <- Downloaded{URL:url, Filename:createdFile, Error:err}
     }
 
     log.Printf("[worker:%d] terminated", workerIndex)

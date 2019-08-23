@@ -64,9 +64,10 @@ func (c *Crawler) Crawl(queries []string, outputFolder string, exportFunc io.Exp
 }
 
 // downloaded contains image URL and downloading success status.
-type downloaded struct {
-    url string
-    success bool
+type Downloaded struct {
+    URL string      `json:"url"`
+    Filename string `json:"filename"`
+    Error error     `json:"error,omitempty"`
 }
 
 // Download takes previously retrieved queries results from metaDataFolder and starts
@@ -75,7 +76,8 @@ type downloaded struct {
 func (c *Crawler) Download(metaDataFolder, imagesFolder string, importFunc io.Importer) {
     log.Printf("loading image URLs from folder: %s", metaDataFolder)
 
-    utils.Check(os.MkdirAll(imagesFolder, os.ModePerm))
+    downloadedFolder := path.Join(imagesFolder, "collected")
+    utils.Check(os.MkdirAll(downloadedFolder, os.ModePerm))
     urls, err := importFunc(metaDataFolder, "contentUrl")
     if err != nil{
         log.Printf("%s", err)
@@ -87,10 +89,10 @@ func (c *Crawler) Download(metaDataFolder, imagesFolder string, importFunc io.Im
 
     log.Printf("launching workers...")
     var workerGroup sync.WaitGroup
-    results := make(chan downloaded)
+    results := make(chan Downloaded)
     for i := 1; i <= c.NumWorkers; i++ {
         workerGroup.Add(1)
-        go downloadingWorker(i, imagesFolder, feed, results, &workerGroup)
+        go downloadingWorker(i, downloadedFolder, feed, results, &workerGroup)
     }
 
     go func(){
@@ -99,9 +101,9 @@ func (c *Crawler) Download(metaDataFolder, imagesFolder string, importFunc io.Im
         close(results)
     }()
 
-    collected := make(map[string]bool)
+    collected := make([]Downloaded, 0)
     for result := range results {
-        collected[result.url] = result.success
+        collected = append(collected, result)
     }
 
     collectedJSON, _ := json.Marshal(collected)

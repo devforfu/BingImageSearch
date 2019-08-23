@@ -29,28 +29,21 @@ func NewImageFetcher(timeout time.Duration) *ImageFetcher {
     }}
 }
 
-func (f *ImageFetcher) Fetch(imageLink, outputFile string) error {
+func (f *ImageFetcher) Fetch(imageLink, outputFile string) (filename string, err error) {
     response, err := f.Get(imageLink)
-    if err != nil { return err }
+    if err != nil { return }
     defer utils.SilentClose(response.Body)
 
     fileURL, err := url.Parse(imageLink)
-    if err != nil {
-        return err
-    }
+    if err != nil { return }
 
     ext, err := utils.FilenameFromURL(fileURL)
-    if err != nil {
-        return err
-    }
+    if err != nil { return }
 
     outputFile += fmt.Sprintf(".%s", ext)
     file := utils.MustCreateFile(outputFile)
     defer utils.SilentClose(file)
+    if _, err = io.Copy(file, response.Body); err != nil { return }
 
-    if _, err = io.Copy(file, response.Body); err != nil {
-        return err
-    }
-
-    return file.Sync()
+    return outputFile, file.Sync()
 }
